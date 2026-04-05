@@ -1,0 +1,18 @@
+{
+  "name": "elevenlabs-email-webhook",
+  "version": "1.0.0",
+  "description": "ElevenLabs post-call webhook handler for Sanctuary Wanaka",
+  "main": "api/webhook.js",
+  "type": "module",
+  "dependencies": {
+    "resend": "^3.0.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel"
+  },
+  "keywords": ["elevenlabs", "webhook", "resend", "email"],
+  "author": "Sanctuary Wanaka",
+  "license": "MIT"
+}
