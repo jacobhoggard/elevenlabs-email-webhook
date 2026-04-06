@@ -2,20 +2,11 @@
   "version": 2,
   "buildCommand": "npm install",
   "installCommand": "npm install",
-  "env": [
-    {
-      "key": "RESEND_API_KEY",
-      "value": "@resend_api_key"
-    },
-    {
-      "key": "ELEVENLABS_WEBHOOK_SECRET",
-      "value": "@elevenlabs_webhook_secret"
-    },
-    {
-      "key": "EMAIL_FROM",
-      "value": "noreply@sanctuarywanaka.com"
-    }
-  ],
+  "env": {
+    "RESEND_API_KEY": "@resend_api_key",
+    "ELEVENLABS_WEBHOOK_SECRET": "@elevenlabs_webhook_secret",
+    "EMAIL_FROM": "noreply@sanctuarywanaka.com"
+  },
   "functions": {
     "api/webhook.js": {
       "memory": 1024,
