@@ -2,6 +2,7 @@
  * ElevenLabs Post-Call Webhook Handler
  * Receives booking data from ElevenLabs Ava agent and sends email via Resend
  * Deployed to Vercel Serverless Functions
+ * Updated: Resend API key configured in Vercel environment
  */
 
 import { Resend } from 'resend';
