@@ -13,13 +13,14 @@ const WEBHOOK_SECRET = process.env.ELEVENLABS_WEBHOOK_SECRET;
 
 // Verify ElevenLabs webhook signature
 function verifyWebhookSignature(request, secret) {
-  const signature = request.headers.get('elevenlabs-signature');
+  // Headers in Vercel are accessed as object properties, not via .get()
+  const signature = request.headers['elevenlabs-signature'];
   if (!signature) return false;
 
-  const timestamp = request.headers.get('elevenlabs-timestamp');
+  const timestamp = request.headers['elevenlabs-timestamp'];
   if (!timestamp) return false;
 
-  const body = request.body;
+  const body = typeof request.body === 'string' ? request.body : JSON.stringify(request.body);
   const signedContent = `${timestamp}.${body}`;
 
   const expectedSignature = crypto
