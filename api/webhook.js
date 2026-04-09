@@ -1,41 +1,27 @@
 /**
  * ElevenLabs Post-Call Webhook Handler
- * Handles the actual ElevenLabs webhook payload format:
- * {
- *   type: "post_call_transcription",
- *   conversation_id: "...",
- *   agent_id: "...",
- *   status: "done",
- *   transcript: [{role, message, time_in_call_secs}, ...],
- *   analysis: {
- *     transcript_summary: "...",
- *     data_collection_results: {name: {value}, phone: {value}, email: {value}, ...}
- *   },
- *   metadata: {start_time_unix_secs, call_duration_secs}
- * }
+ * Fires after every call ends — sends WhatsApp notification to spa team via Twilio
  */
 
-import { Resend } from 'resend';
 import crypto from 'crypto';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const WHATSAPP_FROM = process.env.WHATSAPP_FROM || 'whatsapp:+14155238886'; // Twilio sandbox default
+const WHATSAPP_TO = process.env.WHATSAPP_TO || 'whatsapp:+64211305723';
 const WEBHOOK_SECRET = process.env.ELEVENLABS_WEBHOOK_SECRET;
 
 // Verify ElevenLabs webhook signature
 function verifyWebhookSignature(req, secret) {
   const signature = req.headers['elevenlabs-signature'];
   const timestamp = req.headers['elevenlabs-timestamp'];
-
   if (!signature || !timestamp) return false;
-
   const body = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
   const signedContent = `${timestamp}.${body}`;
-
   const expectedSignature = crypto
     .createHmac('sha256', secret)
     .update(signedContent)
     .digest('hex');
-
   try {
     return crypto.timingSafeEqual(
       Buffer.from(signature.replace('v1=', '')),
@@ -60,7 +46,6 @@ function extractBookingDetails(webhook) {
   const collected = analysis.data_collection_results || {};
   const transcriptText = formatTranscript(webhook.transcript);
 
-  // Helper to get value from data_collection_results
   const get = (key) => {
     const entry = collected[key];
     if (entry && entry.value && entry.value !== 'null' && entry.value !== 'unknown') {
@@ -69,7 +54,6 @@ function extractBookingDetails(webhook) {
     return null;
   };
 
-  // Try structured data first, fall back to regex parsing of transcript
   const name = get('name') || get('customer_name') || parseFromTranscript(transcriptText, 'name');
   const phone = get('phone') || get('phone_number') || get('contact_number') || parseFromTranscript(transcriptText, 'phone');
   const email = get('email') || get('email_address') || parseFromTranscript(transcriptText, 'email');
@@ -87,10 +71,8 @@ function extractBookingDetails(webhook) {
   };
 }
 
-// Fallback regex parsing from transcript text
 function parseFromTranscript(text, field) {
   if (!text) return null;
-
   switch (field) {
     case 'name':
       const nameMatch = text.match(/(?:my name is|i'm|i am|call me)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)/i);
@@ -113,6 +95,31 @@ function parseFromTranscript(text, field) {
     default:
       return null;
   }
+}
+
+// Send WhatsApp message via Twilio REST API
+async function sendWhatsApp(message) {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`;
+  const body = new URLSearchParams({
+    From: WHATSAPP_FROM,
+    To: WHATSAPP_TO,
+    Body: message
+  });
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Basic ' + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64'),
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: body.toString()
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(`Twilio error: ${data.message || JSON.stringify(data)}`);
+  }
+  return data;
 }
 
 export default async (req, res) => {
@@ -138,93 +145,32 @@ export default async (req, res) => {
     }
 
     const booking = extractBookingDetails(webhook);
-    const transcriptText = formatTranscript(webhook.transcript);
-    const summary = webhook.analysis?.transcript_summary || transcriptText.substring(0, 300);
     const conversationId = webhook.conversation_id || webhook.data?.call_id || 'Unknown';
     const duration = webhook.metadata?.call_duration_secs
       ? `${Math.round(webhook.metadata.call_duration_secs / 60)}m ${webhook.metadata.call_duration_secs % 60}s`
       : 'Unknown';
 
-    const emailResponse = await resend.emails.send({
-      from: process.env.EMAIL_FROM || 'noreply@sanctuarywanaka.com',
-      to: 'info@sanctuarywanaka.co.nz',
-      subject: `New Booking Request - ${booking.name}`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <style>
-            body { font-family: Arial, sans-serif; color: #333; margin: 0; padding: 0; background: #f0f0f0; }
-            .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-            .header { background: linear-gradient(135deg, #6b4c9a, #9b6abf); color: white; padding: 25px 30px; }
-            .header h1 { margin: 0; font-size: 22px; }
-            .header p { margin: 5px 0 0; opacity: 0.85; font-size: 13px; }
-            .content { padding: 25px 30px; }
-            .section { margin-bottom: 25px; }
-            .section-title { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #6b4c9a; border-bottom: 2px solid #6b4c9a; padding-bottom: 5px; margin-bottom: 12px; }
-            table { width: 100%; border-collapse: collapse; }
-            td { padding: 8px 0; font-size: 14px; vertical-align: top; }
-            td:first-child { font-weight: bold; width: 160px; color: #555; }
-            .transcript-box { background: #f8f6fb; border-left: 4px solid #6b4c9a; padding: 15px; font-size: 13px; line-height: 1.6; white-space: pre-line; border-radius: 0 4px 4px 0; }
-            .action-box { background: #fff3cd; border: 1px solid #ffc107; border-radius: 5px; padding: 15px; font-size: 14px; }
-            .footer { text-align: center; padding: 15px; font-size: 11px; color: #999; background: #f9f9f9; border-top: 1px solid #eee; }
-            .meta { font-size: 11px; color: #999; margin-top: 10px; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>🌿 New Booking Request</h1>
-              <p>Received via Amelia — Sanctuary Day Spa AI Receptionist</p>
-            </div>
-            <div class="content">
+    const message = [
+      `🌿 *New Booking — Sanctuary Day Spa*`,
+      ``,
+      `👤 *Name:* ${booking.name}`,
+      `📞 *Phone:* ${booking.phone}`,
+      `📧 *Email:* ${booking.email}`,
+      `💆 *Service:* ${booking.service}`,
+      `📅 *Date/Time:* ${booking.datetime}`,
+      `👩‍⚕️ *Therapist:* ${booking.therapist}`,
+      ``,
+      `⚡ Please call or message the client to confirm.`,
+      ``,
+      `_Call ID: ${conversationId} | Duration: ${duration}_`
+    ].join('\n');
 
-              <div class="section">
-                <div class="section-title">Client Information</div>
-                <table>
-                  <tr><td>Name</td><td>${booking.name}</td></tr>
-                  <tr><td>Phone</td><td>${booking.phone}</td></tr>
-                  <tr><td>Email</td><td>${booking.email}</td></tr>
-                </table>
-              </div>
-
-              <div class="section">
-                <div class="section-title">Appointment Details</div>
-                <table>
-                  <tr><td>Service</td><td>${booking.service}</td></tr>
-                  <tr><td>Preferred Date/Time</td><td>${booking.datetime}</td></tr>
-                  <tr><td>Therapist Preference</td><td>${booking.therapist}</td></tr>
-                </table>
-              </div>
-
-              <div class="section">
-                <div class="section-title">Call Summary</div>
-                <div class="transcript-box">${summary}</div>
-              </div>
-
-              <div class="action-box">
-                <strong>⚡ Action Required:</strong> Please call or email the client to confirm their appointment.
-              </div>
-
-              <div class="meta">
-                Call ID: ${conversationId} &nbsp;|&nbsp; Duration: ${duration}
-              </div>
-            </div>
-            <div class="footer">
-              Sanctuary Day Spa · Wanaka · Powered by Amelia AI Receptionist
-            </div>
-          </div>
-        </body>
-        </html>
-      `
-    });
-
-    console.log(`[WEBHOOK] Email sent for ${booking.name} | ID: ${emailResponse.id}`);
+    const result = await sendWhatsApp(message);
+    console.log(`[WEBHOOK] WhatsApp sent for ${booking.name} | SID: ${result.sid}`);
 
     return res.status(200).json({
       success: true,
-      messageId: emailResponse.id,
+      messageSid: result.sid,
       bookingDetails: booking
     });
 

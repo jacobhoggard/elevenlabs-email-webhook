@@ -1,18 +1,16 @@
 {
-  "name": "elevenlabs-email-webhook",
-  "version": "1.0.0",
-  "description": "ElevenLabs post-call webhook handler for Sanctuary Wanaka",
+  "name": "sanctuary-booking-webhook",
+  "version": "2.0.0",
+  "description": "ElevenLabs webhook handler for Sanctuary Day Spa — sends WhatsApp notifications via Twilio",
   "main": "api/webhook.js",
   "type": "module",
-  "dependencies": {
-    "resend": "^3.0.0"
-  },
+  "dependencies": {},
   "devDependencies": {},
   "scripts": {
     "dev": "vercel dev",
-    "deploy": "vercel"
+    "deploy": "vercel --prod"
   },
-  "keywords": ["elevenlabs", "webhook", "resend", "email"],
+  "keywords": ["elevenlabs", "webhook", "twilio", "whatsapp"],
   "author": "Sanctuary Wanaka",
   "license": "MIT"
 }
